@@ -194,11 +194,7 @@ func (t *MerkleTree) AddLeaf(value []byte) (*MerkleNode, error) {
 	}
 
 	// recalculate dimensions
-	t.calcSize()
-	t.calcDepth()
-
-	if t.autoRecalc {
-	}
+	t.calcDim()
 
 	return node, nil
 }
@@ -209,18 +205,28 @@ func (t *MerkleTree) DeleteLeaf(i uint32) error {
 		return fmt.Errorf("out of bounds")
 	}
 
-	// adjust next element of previous element
-	if i > 0 && i < t.Size()-1 {
-		if i < t.Size()-1 {
-			(*t).leaves[i-1].next = (*t).leaves[i+1]
+	// more than 1 leaf node
+	if t.Size() > 1 {
+		// i is not first element
+		if i > 0 {
+			// i is not last element
+			if i < t.Size()-1 {
+				(*t).leaves[i-1].next = (*t).leaves[i+1]
+				newLeaves := append((*t).leaves[:i], (*t).leaves[i+1:]...)
+				(*t).leaves = newLeaves
+			} else {
+				(*t).leaves[i-1].next = nil
+				(*t).leaves = (*t).leaves[:i]
+			}
 		} else {
-			(*t).leaves[i-1].next = nil
+			(*t).leaves = (*t).leaves[1:]
 		}
+	} else {
+		t.leaves = []*MerkleNode{}
+		t.tree = [][]*MerkleNode{}
 	}
 
-	// remove from list
-
-	// TODO: handle logic
+	t.calcDim()
 
 	return nil
 }
