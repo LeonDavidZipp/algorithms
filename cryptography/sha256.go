@@ -1,4 +1,4 @@
-package sha256
+package cryptography
 
 import (
 	"bytes"

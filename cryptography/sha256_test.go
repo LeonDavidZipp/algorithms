@@ -1,4 +1,4 @@
-package sha256
+package cryptography
 
 import (
 	"crypto/sha256"
@@ -17,7 +17,7 @@ func TestSha256(t *testing.T) {
 	for _, test := range testStrings {
 		hashed, err := Sha256([]byte(test))
 		properHashed := sha256.Sum256([]byte(test))
-	
+
 		assert.Nil(t, err)
 		assert.Equal(t, properHashed, hashed)
 	}
