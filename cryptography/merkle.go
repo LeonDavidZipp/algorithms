@@ -27,6 +27,15 @@ type MerkleNode struct {
 	val [32]byte
 }
 
+func NewMerkleNode(val [32]byte) *MerkleNode {
+	return &MerkleNode{
+		par:  nil,
+		next: nil,
+		pos:  nil,
+		val:  val,
+	}
+}
+
 // returns the parent node or nil
 func (n *MerkleNode) Parent() *MerkleNode {
 	return n.par
@@ -68,8 +77,6 @@ type MerkleTree struct {
 	tree [][]*MerkleNode
 	//dimensions of the tree
 	dim dim
-	// whether tree gets recalculated automatically when leaf node is added or removed
-	autoRecalc bool
 }
 
 // TODO: adjust for optimized tree
@@ -105,18 +112,11 @@ func nextPow2(n uint32) uint32 {
 	case 1:
 		return 1
 	default:
-		// quick way using biwise operations to find next greater power of 2 for 32bit integer
-		// n--
-		// n |= n >> 1
-		// n |= n >> 2
-		// n |= n >> 4
-		// n |= n >> 8
-		// n |= n >> 16
-		// return n + 1
 		return 1 << bits.Len32(n-1)
 	}
 }
 
+// calculates the next smaller power of 2 to an uint32 variable
 func prevPow2(n uint32) uint32 {
 	switch n {
 	case 0:
@@ -173,19 +173,14 @@ func (t *MerkleTree) calcPos(i uint32) *pos {
 
 // TODO: adjust for optimized tree
 // adds a new leaf node to the merkle tree leaves array
-func (t *MerkleTree) AddLeaf(value []byte) (*MerkleNode, error) {
+func (t *MerkleTree) PushBackLeaf(value []byte) (*MerkleNode, error) {
 	val, err := Sha256(value)
 	if err != nil {
 		return nil, err
 	}
 
 	// TODO: fix, not correct for optimized tree yet
-	node := &MerkleNode{
-		par:  nil,
-		pos:  nil,
-		val:  val,
-		next: nil,
-	}
+	node := NewMerkleNode(val)
 
 	// add node to leaves
 	t.leaves = append(t.leaves, node)
@@ -194,6 +189,69 @@ func (t *MerkleTree) AddLeaf(value []byte) (*MerkleNode, error) {
 	}
 
 	// recalculate dimensions
+	t.calcDim()
+
+	return node, nil
+}
+
+// PushFrontLeaf leads to whole tree needing to be recalculated!!!
+// adds a new leaf node to the merkle tree leaves array
+func (t *MerkleTree) PushFrontLeaf(value []byte) (*MerkleNode, error) {
+	val, err := Sha256(value)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO: fix, not correct for optimized tree yet
+	node := NewMerkleNode(val)
+
+	// add node to leaves
+	t.leaves = append([]*MerkleNode{node}, t.Leaves()...)
+	if t.Size() > 1 {
+		node.next = t.leaves[1]
+	}
+
+	// recalculate dimensions
+	t.calcDim()
+
+	return node, nil
+}
+
+// inserts a new leaf node at position i
+func (t *MerkleTree) InsertLeaf(value []byte, i uint32) (*MerkleNode, error) {
+	if i >= t.Size() {
+		return nil, fmt.Errorf("out of bounds")
+	}
+
+	val, err := Sha256(value)
+	if err != nil {
+		return nil, err
+	}
+
+	node := NewMerkleNode(val)
+
+	// more than 1 leaf node
+	if t.Size() > 1 {
+		// i is not first element
+		if i > 0 {
+			// i is not last element
+			if i < t.Size()-1 {
+				node.next = (*t).leaves[i]
+				(*t).leaves[i-1].next = node
+				newLeaves := append((*t).leaves[:i], node)
+				(*t).leaves = append(newLeaves, (*t).leaves[i:]...)
+			} else {
+				(*t).leaves[i-1].next = node
+				(*t).leaves = append((*t).leaves, node)
+			}
+		} else {
+			(*t).leaves = append([]*MerkleNode{node}, (*t).leaves...)
+		}
+	} else {
+		t.leaves = []*MerkleNode{node}
+		t.tree = [][]*MerkleNode{[]*MerkleNode{node}}
+	}
+
 	t.calcDim()
 
 	return node, nil
@@ -231,10 +289,30 @@ func (t *MerkleTree) DeleteLeaf(i uint32) error {
 	return nil
 }
 
-// hashes two nodes
-func Hash(node1 *MerkleNode, node2 *MerkleNode) ([32]byte, error) {
+// returns a pos of which nodes with smaller or equal values can be skipped
+func (t *MerkleTree) skippableNodes() pos {
+
+}
+
+// calculates the tree completely with no regard for indexing
+func (t *MerkleTree) CalculateTree() {
+
+}
+
+// hashes two nodes & returns resulting parent node
+func HashNodes(node1 *MerkleNode, node2 *MerkleNode) (*MerkleNode, error) {
+	// generate parent node
 	val1 := node1.Value()
 	val2 := node2.Value()
-	combined := append(val1[:], val2[:]...)
-	return Sha256(combined)
+	val, err := Sha256(append(val1[:], val2[:]...))
+	if err != nil {
+		return nil, err
+	}
+	parent := NewMerkleNode(val)
+
+	// set parent of both nodes to parent
+	node1.par = parent
+	node2.par = parent
+
+	return parent, nil
 }
