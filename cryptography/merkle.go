@@ -96,7 +96,7 @@ func NewMerkleTree(leaves []*MerkleNode) *MerkleTree {
 
 // counts the number of leavf nodes
 func (t *MerkleTree) calcSize() {
-	t.dim.size = uint32(len((*t).leaves))
+	t.dim.size = uint32(len(t.leaves))
 }
 
 // returns count of leaf nodes of tree
@@ -166,11 +166,6 @@ func (t *MerkleTree) Leaf(i uint32) (*MerkleNode, error) {
 	return t.leaves[i], nil
 }
 
-// calculates the least-calculations-optimized position of a leaf node in the tree
-func (t *MerkleTree) calcPos(i uint32) *pos {
-	return &pos{}
-}
-
 // TODO: adjust for optimized tree
 // adds a new leaf node to the merkle tree leaves array
 func (t *MerkleTree) PushBackLeaf(value []byte) (*MerkleNode, error) {
@@ -185,7 +180,7 @@ func (t *MerkleTree) PushBackLeaf(value []byte) (*MerkleNode, error) {
 	// add node to leaves
 	t.leaves = append(t.leaves, node)
 	if t.Size() > 0 {
-		(*t).leaves[t.Size()-1].next = node
+		t.leaves[t.Size()-1].next = node
 	}
 
 	// recalculate dimensions
@@ -236,20 +231,20 @@ func (t *MerkleTree) InsertLeaf(value []byte, i uint32) (*MerkleNode, error) {
 		if i > 0 {
 			// i is not last element
 			if i < t.Size()-1 {
-				node.next = (*t).leaves[i]
-				(*t).leaves[i-1].next = node
-				newLeaves := append((*t).leaves[:i], node)
-				(*t).leaves = append(newLeaves, (*t).leaves[i:]...)
+				node.next = t.leaves[i]
+				t.leaves[i-1].next = node
+				newLeaves := append(t.leaves[:i], node)
+				t.leaves = append(newLeaves, t.leaves[i:]...)
 			} else {
-				(*t).leaves[i-1].next = node
-				(*t).leaves = append((*t).leaves, node)
+				t.leaves[i-1].next = node
+				t.leaves = append(t.leaves, node)
 			}
 		} else {
-			(*t).leaves = append([]*MerkleNode{node}, (*t).leaves...)
+			t.leaves = append([]*MerkleNode{node}, t.leaves...)
 		}
 	} else {
 		t.leaves = []*MerkleNode{node}
-		t.tree = [][]*MerkleNode{[]*MerkleNode{node}}
+		t.tree = [][]*MerkleNode{{node}}
 	}
 
 	t.calcDim()
@@ -269,15 +264,15 @@ func (t *MerkleTree) DeleteLeaf(i uint32) error {
 		if i > 0 {
 			// i is not last element
 			if i < t.Size()-1 {
-				(*t).leaves[i-1].next = (*t).leaves[i+1]
-				newLeaves := append((*t).leaves[:i], (*t).leaves[i+1:]...)
-				(*t).leaves = newLeaves
+				t.leaves[i-1].next = t.leaves[i+1]
+				newLeaves := append(t.leaves[:i], t.leaves[i+1:]...)
+				t.leaves = newLeaves
 			} else {
-				(*t).leaves[i-1].next = nil
-				(*t).leaves = (*t).leaves[:i]
+				t.leaves[i-1].next = nil
+				t.leaves = t.leaves[:i]
 			}
 		} else {
-			(*t).leaves = (*t).leaves[1:]
+			t.leaves = t.leaves[1:]
 		}
 	} else {
 		t.leaves = []*MerkleNode{}
@@ -289,14 +284,49 @@ func (t *MerkleTree) DeleteLeaf(i uint32) error {
 	return nil
 }
 
-// returns a pos of which nodes with smaller or equal values can be skipped
-func (t *MerkleTree) skippableNodes() pos {
-
+// calculates the least-calculations-optimized position of a leaf node in the tree
+func (t *MerkleTree) calcOptimizedPos(i uint32) *pos {
+	return &pos{}
 }
 
-// calculates the tree completely with no regard for indexing
-func (t *MerkleTree) CalculateTree() {
+// calculates the tree starting from start index
+func (t *MerkleTree) CalculateTree(start uint32) (*MerkleNode, error) {
+	if start >= t.Size() {
+		return nil, fmt.Errorf("out of bounds")
+	}
 
+	// if the start element is the 2nd of a pairing, the first element also needs to be moved
+	if start%2 == 1 {
+		start--
+	}
+
+	// cleanup tree
+	for i := uint32(1); i < t.Depth(); i++ {
+		t.tree[i] = t.tree[i][:start>>i]
+	}
+
+	// calculate the new optimized positions & move them there
+	for i := start; i < t.Size(); i++ {
+		p := t.calcOptimizedPos(i)
+		t.leaves[i].pos = p
+		t.leaves[i].par = nil
+		t.tree[p.row] = append(t.tree[p.row], t.leaves[i])
+	}
+
+	// hash all entries
+	maxRow := t.Depth() - 1
+	for i := uint32(0); i < maxRow; i++ {
+		rowStart := int(start >> i)
+		for j := rowStart; j < len(t.tree[i]); i += 2 {
+			parent, err := HashNodes(t.tree[i][j], t.tree[i][j+1])
+			if err != nil {
+				return nil, err
+			}
+			t.tree[i+1] = append(t.tree[i+1], parent)
+		}
+	}
+
+	return t.tree[maxRow][0], nil
 }
 
 // hashes two nodes & returns resulting parent node
