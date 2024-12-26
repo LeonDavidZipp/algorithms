@@ -19,8 +19,6 @@ type pos struct {
 type MerkleNode struct {
 	// parent node
 	par *MerkleNode
-	// next node in row
-	next *MerkleNode
 	// position in tree; if nil, pos has not been set yet
 	pos *pos
 	// hashed data
@@ -30,7 +28,6 @@ type MerkleNode struct {
 func NewMerkleNode(val [32]byte) *MerkleNode {
 	return &MerkleNode{
 		par:  nil,
-		next: nil,
 		pos:  nil,
 		val:  val,
 	}
@@ -49,11 +46,6 @@ func (n *MerkleNode) Position() *pos {
 // returns hash stored in node
 func (n *MerkleNode) Value() [32]byte {
 	return n.val
-}
-
-// returns next node after this one or nil
-func (n *MerkleNode) Next() *MerkleNode {
-	return n.next
 }
 
 /* --------------------------------------------------------------------------------- */
@@ -158,7 +150,6 @@ func (t *MerkleTree) PushBackLeaf(value []byte) (*MerkleNode, error) {
 	t.calcDim()
 
 	if t.Size() > 0 {
-		t.leaves[t.Size()-1].next = node
 		t.calcTree(t.Size() - 1)
 	}
 
@@ -179,10 +170,6 @@ func (t *MerkleTree) PushFrontLeaf(value []byte) (*MerkleNode, error) {
 	// add node to leaves
 	t.leaves = append([]*MerkleNode{node}, t.Leaves()...)
 	t.calcDim()
-
-	if t.Size() > 1 {
-		node.next = t.leaves[1]
-	}
 
 	t.calcTree(0)
 
@@ -208,12 +195,9 @@ func (t *MerkleTree) InsertLeaf(value []byte, i uint32) (*MerkleNode, error) {
 		if i > 0 {
 			// i is not last element
 			if i < t.Size()-1 {
-				node.next = t.leaves[i]
-				t.leaves[i-1].next = node
 				newLeaves := append(t.leaves[:i], node)
 				t.leaves = append(newLeaves, t.leaves[i:]...)
 			} else {
-				t.leaves[i-1].next = node
 				t.leaves = append(t.leaves, node)
 			}
 		} else {
@@ -243,11 +227,9 @@ func (t *MerkleTree) DeleteLeaf(i uint32) error {
 		if i > 0 {
 			// i is not last element
 			if i < t.Size()-1 {
-				t.leaves[i-1].next = t.leaves[i+1]
 				newLeaves := append(t.leaves[:i], t.leaves[i+1:]...)
 				t.leaves = newLeaves
 			} else {
-				t.leaves[i-1].next = nil
 				t.leaves = t.leaves[:i]
 			}
 		} else {
