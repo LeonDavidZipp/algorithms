@@ -81,20 +81,25 @@ type MerkleTree struct {
 
 // TODO: adjust for optimized tree
 // creates a new merkle tree
-func NewMerkleTree(leaves []*MerkleNode) *MerkleTree {
+func NewMerkleTree(leaves []*MerkleNode) (*MerkleTree, error) {
 	tree := &MerkleTree{
 		leaves: leaves,
 		tree:   [][]*MerkleNode{},
 	}
 
+	// calculate dimensions
 	tree.calcDim()
 
-	// TODO: calculations to create tree
+	if tree.Size() > 0 {
+		if _, err := tree.calcTree(0); err != nil {
+			return nil, err
+		}
+	}
 
-	return tree
+	return tree, nil
 }
 
-// counts the number of leavf nodes
+// counts the number of leaf nodes
 func (t *MerkleTree) calcSize() {
 	t.dim.size = uint32(len(t.leaves))
 }
@@ -102,35 +107,6 @@ func (t *MerkleTree) calcSize() {
 // returns count of leaf nodes of tree
 func (t *MerkleTree) Size() uint32 {
 	return t.dim.size
-}
-
-// calculates the next greater power of 2 to an uint32 variable
-func nextPow2(n uint32) uint32 {
-	switch n {
-	case 0:
-		return 0
-	case 1:
-		return 1
-	default:
-		return 1 << bits.Len32(n-1)
-	}
-}
-
-// calculates the next smaller power of 2 to an uint32 variable
-func prevPow2(n uint32) uint32 {
-	switch n {
-	case 0:
-		return 0
-	case 1:
-		return 1
-	default:
-		return 1 << (bits.Len32(n) - 1)
-	}
-}
-
-// returns the base-2 logarithm of n
-func log2(n uint32) uint32 {
-	return uint32(bits.Len32(n) - 1)
 }
 
 // returns count of rows of tree
@@ -142,15 +118,15 @@ func (t *MerkleTree) calcDepth() {
 	}
 }
 
+// returns depth of the tree
+func (t *MerkleTree) Depth() uint32 {
+	return t.dim.depth
+}
+
 // calculates the dimensions of the tree
 func (t *MerkleTree) calcDim() {
 	t.calcSize()
 	t.calcDepth()
-}
-
-// returns depth of the tree
-func (t *MerkleTree) Depth() uint32 {
-	return t.dim.depth
 }
 
 // returns leaf nodes of tree
@@ -163,6 +139,7 @@ func (t *MerkleTree) Leaf(i uint32) (*MerkleNode, error) {
 	if i >= t.Size() {
 		return nil, fmt.Errorf("out of bounds")
 	}
+
 	return t.leaves[i], nil
 }
 
@@ -174,17 +151,16 @@ func (t *MerkleTree) PushBackLeaf(value []byte) (*MerkleNode, error) {
 		return nil, err
 	}
 
-	// TODO: fix, not correct for optimized tree yet
 	node := NewMerkleNode(val)
 
 	// add node to leaves
 	t.leaves = append(t.leaves, node)
+	t.calcDim()
+
 	if t.Size() > 0 {
 		t.leaves[t.Size()-1].next = node
+		t.calcTree(t.Size() - 1)
 	}
-
-	// recalculate dimensions
-	t.calcDim()
 
 	return node, nil
 }
@@ -202,12 +178,13 @@ func (t *MerkleTree) PushFrontLeaf(value []byte) (*MerkleNode, error) {
 
 	// add node to leaves
 	t.leaves = append([]*MerkleNode{node}, t.Leaves()...)
+	t.calcDim()
+
 	if t.Size() > 1 {
 		node.next = t.leaves[1]
 	}
 
-	// recalculate dimensions
-	t.calcDim()
+	t.calcTree(0)
 
 	return node, nil
 }
@@ -249,6 +226,8 @@ func (t *MerkleTree) InsertLeaf(value []byte, i uint32) (*MerkleNode, error) {
 
 	t.calcDim()
 
+	t.calcTree(i)
+
 	return node, nil
 }
 
@@ -281,6 +260,10 @@ func (t *MerkleTree) DeleteLeaf(i uint32) error {
 
 	t.calcDim()
 
+	if t.Size() > 0 {
+		t.calcTree(i)
+	}
+
 	return nil
 }
 
@@ -299,7 +282,6 @@ func (t *MerkleTree) calcFirstInsertableRow(leftover uint32) uint32 {
 }
 
 func (t *MerkleTree) cleanupTree(start uint32) {
-	// cleanup tree
 	for i := uint32(1); i < t.Depth(); i++ {
 		t.tree[i] = t.tree[i][:start>>i]
 	}
@@ -396,4 +378,33 @@ func hashNodes(node1 *MerkleNode, node2 *MerkleNode) (*MerkleNode, error) {
 	node2.par = parent
 
 	return parent, nil
+}
+
+// calculates the next greater power of 2 to an uint32 variable
+func nextPow2(n uint32) uint32 {
+	switch n {
+	case 0:
+		return 0
+	case 1:
+		return 1
+	default:
+		return 1 << bits.Len32(n-1)
+	}
+}
+
+// calculates the next smaller power of 2 to an uint32 variable
+func prevPow2(n uint32) uint32 {
+	switch n {
+	case 0:
+		return 0
+	case 1:
+		return 1
+	default:
+		return 1 << (bits.Len32(n) - 1)
+	}
+}
+
+// returns the base-2 logarithm of n
+func log2(n uint32) uint32 {
+	return uint32(bits.Len32(n) - 1)
 }
