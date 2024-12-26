@@ -284,13 +284,73 @@ func (t *MerkleTree) DeleteLeaf(i uint32) error {
 	return nil
 }
 
-// calculates the least-calculations-optimized position of a leaf node in the tree
-func (t *MerkleTree) calcOptimizedPos(i uint32) *pos {
-	return &pos{}
+// calculates the first row where insertion should start
+func (t *MerkleTree) calcFirstInsertableRow(leftover uint32) uint32 {
+	s := nextPow2(t.Size())
+	var i uint32
+	for i = 1; i < t.Depth()-1; i++ {
+		missing := (s >> i) - uint32(len(t.tree[i]))
+		if leftover > missing {
+			return i - 1
+		}
+	}
+
+	return i - 1
 }
 
-// calculates the tree starting from start index
-func (t *MerkleTree) CalculateTree(start uint32) (*MerkleNode, error) {
+func (t *MerkleTree) cleanupTree(start uint32) {
+	// cleanup tree
+	for i := uint32(1); i < t.Depth(); i++ {
+		t.tree[i] = t.tree[i][:start>>i]
+	}
+}
+
+// calculates the least-calculations-optimized position of all leaf nodes in the tree
+func (t *MerkleTree) calcOptimizedPos() {
+	s := t.Size()
+	// all nodes left of start are in the correct position
+	start := prevPow2(s)
+	leftover := s - start
+
+	for i := t.calcFirstInsertableRow(leftover); i < t.Depth()-2; i++ {
+		// always insert as many nodes nc as possible so complete subtree is inserted (2^n leaf nodes)
+		insertCount := prevPow2(leftover)
+		offset := uint32(0) // 0 for first insertion, half of previous insertion for all following
+		for j := uint32(0); j < insertCount; j++ {
+			// row start will always be half of previous row's start
+			rowStart := start >> i
+			t.leaves[start+j].pos = &pos{
+				row: i,
+				col: rowStart + offset + j,
+			}
+		}
+
+		leftover -= insertCount
+		offset = insertCount >> 1
+
+		// if there are less leftover nodes than the next smaller insertCount, skip rows until there's not
+		for k := leftover; k < (insertCount >> 1); k++ {
+			i++
+			offset >>= 1
+		}
+	}
+}
+
+// moves the leaves to their optimized positions
+func (t *MerkleTree) moveLeaves() {
+	s := t.Size()
+
+	// iterate over every node
+	for i := prevPow2(s); i < s; i++ {
+		for missing := t.leaves[i].pos.col - uint32(len(t.tree[t.leaves[i].pos.row])); missing > 0; missing-- {
+			t.tree[t.leaves[i].pos.row] = append(t.tree[t.leaves[i].pos.row], nil)
+		}
+		t.tree[t.leaves[i].pos.row] = append(t.tree[t.leaves[i].pos.row], t.leaves[i])
+	}
+}
+
+// calculates the tree starting from start index; leaves everything left of index untouched
+func (t *MerkleTree) calcTree(start uint32) (*MerkleNode, error) {
 	if start >= t.Size() {
 		return nil, fmt.Errorf("out of bounds")
 	}
@@ -300,29 +360,20 @@ func (t *MerkleTree) CalculateTree(start uint32) (*MerkleNode, error) {
 		start--
 	}
 
-	// cleanup tree
-	for i := uint32(1); i < t.Depth(); i++ {
-		t.tree[i] = t.tree[i][:start>>i]
-	}
-
-	// calculate the new optimized positions & move them there
-	for i := start; i < t.Size(); i++ {
-		p := t.calcOptimizedPos(i)
-		t.leaves[i].pos = p
-		t.leaves[i].par = nil
-		t.tree[p.row] = append(t.tree[p.row], t.leaves[i])
-	}
+	t.cleanupTree(start)
+	t.calcOptimizedPos()
+	t.moveLeaves()
 
 	// hash all entries
 	maxRow := t.Depth() - 1
 	for i := uint32(0); i < maxRow; i++ {
 		rowStart := int(start >> i)
-		for j := rowStart; j < len(t.tree[i]); i += 2 {
-			parent, err := HashNodes(t.tree[i][j], t.tree[i][j+1])
+		for j := rowStart; j < len(t.tree[i]); j += 2 {
+			parent, err := hashNodes(t.tree[i][j], t.tree[i][j+1])
 			if err != nil {
 				return nil, err
 			}
-			t.tree[i+1] = append(t.tree[i+1], parent)
+			t.tree[i+1][j] = parent
 		}
 	}
 
@@ -330,7 +381,7 @@ func (t *MerkleTree) CalculateTree(start uint32) (*MerkleNode, error) {
 }
 
 // hashes two nodes & returns resulting parent node
-func HashNodes(node1 *MerkleNode, node2 *MerkleNode) (*MerkleNode, error) {
+func hashNodes(node1 *MerkleNode, node2 *MerkleNode) (*MerkleNode, error) {
 	// generate parent node
 	val1 := node1.Value()
 	val2 := node2.Value()
