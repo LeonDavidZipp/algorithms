@@ -27,9 +27,9 @@ type MerkleNode struct {
 
 func NewMerkleNode(val [32]byte) *MerkleNode {
 	return &MerkleNode{
-		par:  nil,
-		pos:  nil,
-		val:  val,
+		par: nil,
+		pos: nil,
+		val: val,
 	}
 }
 
@@ -72,21 +72,28 @@ type MerkleTree struct {
 }
 
 // TODO: adjust for optimized tree
-// creates a new merkle tree
-func NewMerkleTree(leaves []*MerkleNode) (*MerkleTree, error) {
+// creates a new merkle tree from the given leaves
+func NewMerkleTree(vals [][]byte) (*MerkleTree, error) {
 	tree := &MerkleTree{
-		leaves: leaves,
-		tree:   [][]*MerkleNode{},
+		tree: [][]*MerkleNode{},
+	}
+	tree.leaves = []*MerkleNode{}
+	for _, val := range vals {
+		hashed, err := Sha256(val)
+		if err != nil {
+			return nil, err
+		}
+		tree.leaves = append(tree.leaves, NewMerkleNode(hashed))
 	}
 
 	// calculate dimensions
 	tree.calcDim()
 
-	if tree.Size() > 0 {
-		if _, err := tree.calcTree(0); err != nil {
-			return nil, err
-		}
-	}
+	// if tree.Size() > 0 {
+	// 	if _, err := tree.calcTree(0); err != nil {
+	// 		return nil, err
+	// 	}
+	// }
 
 	return tree, nil
 }
